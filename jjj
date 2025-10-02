@@ -1,0 +1,770 @@
+-- 🔒 防重复运行
+if _G.AimLockRunning then 
+    warn("Script already running") 
+    return 
+end 
+_G.AimLockRunning = true
+
+-- 📦 服务引用
+local uis = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
+local players = game:GetService("Players")
+local ts = game:GetService("TweenService")
+local cam = workspace.CurrentCamera
+local lp = players.LocalPlayer
+
+-- 🎯 全局变量
+local lockedTarget = nil
+local autoLockEnabled = false
+local HEAD_FORWARD_OFFSET = 0.5
+local espEnabled = false
+local weaponModEnabled = false
+local LOCK_RADIUS = 50  -- 缩小至原来的一半
+local showLockCircle = false
+local lockCircle
+
+-- 🎨 创建主UI
+local gui = Instance.new("ScreenGui")
+gui.Name = "AimLockProUI"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 10
+gui.Parent = lp:WaitForChild("PlayerGui")
+
+-- 🔘 小型侧边控制UI
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 60, 0, 200)
+sidebar.Position = UDim2.new(0, 10, 0.5, -100)
+sidebar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+sidebar.BackgroundTransparency = 0.1
+sidebar.BorderSizePixel = 0
+sidebar.Active = true
+sidebar.Selectable = false
+sidebar.ClipsDescendants = false
+sidebar.Parent = gui
+
+local sidebarCorner = Instance.new("UICorner")
+sidebarCorner.CornerRadius = UDim.new(0, 8)
+sidebarCorner.Parent = sidebar
+
+local sidebarStroke = Instance.new("UIStroke")
+sidebarStroke.Color = Color3.fromRGB(100, 100, 200)
+sidebarStroke.Thickness = 2
+sidebarStroke.Parent = sidebar
+
+-- 侧边栏标题
+local sidebarTitle = Instance.new("TextLabel")
+sidebarTitle.Size = UDim2.new(1, 0, 0, 30)
+sidebarTitle.BackgroundTransparency = 1
+sidebarTitle.Text = "MENU"
+sidebarTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+sidebarTitle.Font = Enum.Font.GothamBold
+sidebarTitle.TextSize = 12
+sidebarTitle.Parent = sidebar
+
+-- 显示/隐藏主UI按钮
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0.8, 0, 0, 40)
+toggleBtn.Position = UDim2.new(0.1, 0, 0.2, 0)
+toggleBtn.Text = "📱"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 18
+toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 160)
+toggleBtn.AutoButtonColor = true
+toggleBtn.Parent = sidebar
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 6)
+toggleCorner.Parent = toggleBtn
+
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Color = Color3.fromRGB(255, 255, 255)
+toggleStroke.Thickness = 1
+toggleStroke.Transparency = 0.3
+toggleStroke.Parent = toggleBtn
+
+-- 状态指示器
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0, 20)
+statusLabel.Position = UDim2.new(0, 0, 0.45, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "OFF"
+statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextSize = 10
+statusLabel.Parent = sidebar
+
+-- 快速功能按钮
+local quickAimlock = Instance.new("TextButton")
+quickAimlock.Size = UDim2.new(0.8, 0, 0, 30)
+quickAimlock.Position = UDim2.new(0.1, 0, 0.6, 0)
+quickAimlock.Text = "🎯"
+quickAimlock.TextColor3 = Color3.fromRGB(255, 255, 255)
+quickAimlock.Font = Enum.Font.GothamBold
+quickAimlock.TextSize = 14
+quickAimlock.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+quickAimlock.AutoButtonColor = true
+quickAimlock.Parent = sidebar
+
+local quickEsp = Instance.new("TextButton")
+quickEsp.Size = UDim2.new(0.8, 0, 0, 30)
+quickEsp.Position = UDim2.new(0.1, 0, 0.75, 0)
+quickEsp.Text = "👁"
+quickEsp.TextColor3 = Color3.fromRGB(255, 255, 255)
+quickEsp.Font = Enum.Font.GothamBold
+quickEsp.TextSize = 14
+quickEsp.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+quickEsp.AutoButtonColor = true
+quickEsp.Parent = sidebar
+
+local quickWeapon = Instance.new("TextButton")
+quickWeapon.Size = UDim2.new(0.8, 0, 0, 30)
+quickWeapon.Position = UDim2.new(0.1, 0, 0.9, 0)
+quickWeapon.Text = "🔫"
+quickWeapon.TextColor3 = Color3.fromRGB(255, 255, 255)
+quickWeapon.Font = Enum.Font.GothamBold
+quickWeapon.TextSize = 14
+quickWeapon.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+quickWeapon.AutoButtonColor = true
+quickWeapon.Parent = sidebar
+
+local quickCorner = Instance.new("UICorner")
+quickCorner.CornerRadius = UDim.new(0, 6)
+quickCorner.Parent = quickAimlock
+quickCorner:Clone().Parent = quickEsp
+quickCorner:Clone().Parent = quickWeapon
+
+local quickStroke = Instance.new("UIStroke")
+quickStroke.Color = Color3.fromRGB(255, 255, 255)
+quickStroke.Thickness = 1
+quickStroke.Transparency = 0.3
+quickStroke.Parent = quickAimlock
+quickStroke:Clone().Parent = quickEsp
+quickStroke:Clone().Parent = quickWeapon
+
+-- 🎯 创建简化的锁定圆圈UI
+local function createLockCircle()
+    if lockCircle then lockCircle:Destroy() end
+    
+    lockCircle = Instance.new("Frame")
+    lockCircle.Size = UDim2.new(0, LOCK_RADIUS, 0, LOCK_RADIUS)  -- 只使用小圈
+    lockCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    lockCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+    lockCircle.BackgroundTransparency = 1
+    lockCircle.BorderSizePixel = 0
+    lockCircle.Visible = false
+    lockCircle.Active = false
+    lockCircle.Selectable = false
+    lockCircle.ClipsDescendants = false
+    lockCircle.ZIndex = 1
+    lockCircle.Parent = gui
+    
+    -- 只有一个圆圈
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    circleCorner.Parent = lockCircle
+    
+    local circleStroke = Instance.new("UIStroke")
+    circleStroke.Color = Color3.fromRGB(255, 50, 50)
+    circleStroke.Thickness = 2  -- 稍微细一点
+    circleStroke.Transparency = 0.3
+    circleStroke.Parent = lockCircle
+    
+    -- 中心点
+    local centerDot = Instance.new("Frame")
+    centerDot.Size = UDim2.new(0, 3, 0, 3)  -- 更小的中心点
+    centerDot.AnchorPoint = Vector2.new(0.5, 0.5)
+    centerDot.Position = UDim2.new(0.5, 0, 0.5, 0)
+    centerDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    centerDot.BorderSizePixel = 0
+    centerDot.Active = false
+    centerDot.Selectable = false
+    centerDot.Parent = lockCircle
+    
+    local centerCorner = Instance.new("UICorner")
+    centerCorner.CornerRadius = UDim.new(1, 0)
+    centerCorner.Parent = centerDot
+    
+    return lockCircle
+end
+
+-- 初始化锁定圆圈
+createLockCircle()
+
+-- 🏠 主容器 (初始隐藏)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 300, 0, 400)
+mainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Active = true
+mainFrame.Selectable = false
+mainFrame.ZIndex = 10
+mainFrame.Parent = gui
+
+-- 圆角
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = mainFrame
+
+-- 边框
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(100, 100, 200)
+stroke.Thickness = 2
+stroke.Parent = mainFrame
+
+-- 标题栏 (可拖拽区域)
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+titleBar.BorderSizePixel = 0
+titleBar.Active = true
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.Parent = titleBar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 1, 0)
+title.BackgroundTransparency = 1
+title.Text = "🔫 AIMLOCK PRO v2.0"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.Parent = titleBar
+
+-- 内容区域
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, -20, 1, -60)
+content.Position = UDim2.new(0, 10, 0, 50)
+content.BackgroundTransparency = 1
+content.Active = true
+content.Parent = mainFrame
+
+-- 🎯 AimLock 模块
+local aimlockSection = Instance.new("Frame")
+aimlockSection.Size = UDim2.new(1, 0, 0, 120)
+aimlockSection.BackgroundTransparency = 1
+aimlockSection.Parent = content
+
+local aimlockTitle = Instance.new("TextLabel")
+aimlockTitle.Size = UDim2.new(1, 0, 0, 25)
+aimlockTitle.BackgroundTransparency = 1
+aimlockTitle.Text = "🎯 AIMLOCK"
+aimlockTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+aimlockTitle.Font = Enum.Font.GothamBold
+aimlockTitle.TextSize = 16
+aimlockTitle.TextXAlignment = Enum.TextXAlignment.Left
+aimlockTitle.Parent = aimlockSection
+
+local aimlockBtn = Instance.new("TextButton")
+aimlockBtn.Size = UDim2.new(1, 0, 0, 40)
+aimlockBtn.Position = UDim2.new(0, 0, 0, 30)
+aimlockBtn.Text = "🔓 AUTO LOCK: OFF"
+aimlockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+aimlockBtn.Font = Enum.Font.GothamBold
+aimlockBtn.TextSize = 14
+aimlockBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+aimlockBtn.AutoButtonColor = true
+aimlockBtn.Parent = aimlockSection
+
+local aimlockCorner = Instance.new("UICorner")
+aimlockCorner.CornerRadius = UDim.new(0, 8)
+aimlockCorner.Parent = aimlockBtn
+
+local aimlockStroke = Instance.new("UIStroke")
+aimlockStroke.Color = Color3.fromRGB(255, 255, 255)
+aimlockStroke.Thickness = 1
+aimlockStroke.Transparency = 0.3
+aimlockStroke.Parent = aimlockBtn
+
+local aimlockInfo = Instance.new("TextLabel")
+aimlockInfo.Size = UDim2.new(1, 0, 0, 20)
+aimlockInfo.Position = UDim2.new(0, 0, 0, 75)
+aimlockInfo.BackgroundTransparency = 1
+aimlockInfo.Text = "Press R or click button to toggle"
+aimlockInfo.TextColor3 = Color3.fromRGB(180, 180, 180)
+aimlockInfo.Font = Enum.Font.Gotham
+aimlockInfo.TextSize = 12
+aimlockInfo.TextXAlignment = Enum.TextXAlignment.Left
+aimlockInfo.Parent = aimlockSection
+
+-- 👁️ ESP 模块
+local espSection = Instance.new("Frame")
+espSection.Size = UDim2.new(1, 0, 0, 80)
+espSection.Position = UDim2.new(0, 0, 0, 130)
+espSection.BackgroundTransparency = 1
+espSection.Parent = content
+
+local espTitle = Instance.new("TextLabel")
+espTitle.Size = UDim2.new(1, 0, 0, 25)
+espTitle.BackgroundTransparency = 1
+espTitle.Text = "👁️ ESP HIGHLIGHT"
+espTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+espTitle.Font = Enum.Font.GothamBold
+espTitle.TextSize = 16
+espTitle.TextXAlignment = Enum.TextXAlignment.Left
+espTitle.Parent = espSection
+
+local espBtn = Instance.new("TextButton")
+espBtn.Size = UDim2.new(1, 0, 0, 40)
+espBtn.Position = UDim2.new(0, 0, 0, 30)
+espBtn.Text = "🔴 ESP: OFF"
+espBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+espBtn.Font = Enum.Font.GothamBold
+espBtn.TextSize = 14
+espBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+espBtn.AutoButtonColor = true
+espBtn.Parent = espSection
+
+local espCorner = Instance.new("UICorner")
+espCorner.CornerRadius = UDim.new(0, 8)
+espCorner.Parent = espBtn
+
+local espStroke = Instance.new("UIStroke")
+espStroke.Color = Color3.fromRGB(255, 255, 255)
+espStroke.Thickness = 1
+espStroke.Transparency = 0.3
+espStroke.Parent = espBtn
+
+-- 🔫 武器修改模块
+local weaponSection = Instance.new("Frame")
+weaponSection.Size = UDim2.new(1, 0, 0, 80)
+weaponSection.Position = UDim2.new(0, 0, 0, 220)
+weaponSection.BackgroundTransparency = 1
+weaponSection.Parent = content
+
+local weaponTitle = Instance.new("TextLabel")
+weaponTitle.Size = UDim2.new(1, 0, 0, 25)
+weaponTitle.BackgroundTransparency = 1
+weaponTitle.Text = "🔫 WEAPON MODS"
+weaponTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+weaponTitle.Font = Enum.Font.GothamBold
+weaponTitle.TextSize = 16
+weaponTitle.TextXAlignment = Enum.TextXAlignment.Left
+weaponTitle.Parent = weaponSection
+
+local weaponBtn = Instance.new("TextButton")
+weaponBtn.Size = UDim2.new(1, 0, 0, 40)
+weaponBtn.Position = UDim2.new(0, 0, 0, 30)
+weaponBtn.Text = "🔴 WEAPON MODS: OFF"
+weaponBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+weaponBtn.Font = Enum.Font.GothamBold
+weaponBtn.TextSize = 14
+weaponBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+weaponBtn.AutoButtonColor = true
+weaponBtn.Parent = weaponSection
+
+local weaponCorner = Instance.new("UICorner")
+weaponCorner.CornerRadius = UDim.new(0, 8)
+weaponCorner.Parent = weaponBtn
+
+local weaponStroke = Instance.new("UIStroke")
+weaponStroke.Color = Color3.fromRGB(255, 255, 255)
+weaponStroke.Thickness = 1
+weaponStroke.Transparency = 0.3
+weaponStroke.Parent = weaponBtn
+
+-- 🔘 侧边栏功能
+local function toggleMainUI()
+    mainFrame.Visible = not mainFrame.Visible
+    if mainFrame.Visible then
+        toggleBtn.Text = "📱"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        statusLabel.Text = "ON"
+        statusLabel.TextColor3 = Color3.fromRGB(50, 200, 50)
+        print("📱 Main UI Shown")
+    else
+        toggleBtn.Text = "📱"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 160)
+        statusLabel.Text = "OFF"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        print("📱 Main UI Hidden")
+    end
+end
+
+-- 更新侧边栏快速按钮状态
+local function updateQuickButtons()
+    if autoLockEnabled then
+        quickAimlock.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        quickAimlock.Text = "🎯✓"
+    else
+        quickAimlock.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        quickAimlock.Text = "🎯"
+    end
+    
+    if espEnabled then
+        quickEsp.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        quickEsp.Text = "👁✓"
+    else
+        quickEsp.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        quickEsp.Text = "👁"
+    end
+    
+    if weaponModEnabled then
+        quickWeapon.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        quickWeapon.Text = "🔫✓"
+    else
+        quickWeapon.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        quickWeapon.Text = "🔫"
+    end
+end
+
+-- 🎯 AimLock 功能
+local function getAimPart(model)
+    if not model then return nil end
+    if players:FindFirstChild(model.Name) then return nil end
+    
+    local propane = model:FindFirstChild("PropaneTank")
+    if propane and propane:IsA("Model") then
+        local hitbox = propane:FindFirstChild("Hitbox")
+        if hitbox and hitbox:IsA("BasePart") then
+            return hitbox
+        end
+    end
+    
+    for i = 1, 4 do
+        local emp = model:FindFirstChild("Emplacement"..i)
+        if emp and emp:IsA("Model") then
+            local gunBase = emp:FindFirstChild("GunBase"..i)
+            if gunBase and gunBase:IsA("BasePart") then
+                return gunBase
+            end
+        end
+    end
+    
+    return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+end
+
+local function getClosestTargetInCircle()
+    local closest, closestDist = nil, math.huge
+    local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and model:FindFirstChild("Humanoid") then
+            local hum = model:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local aimPart = getAimPart(model)
+                if aimPart then
+                    local screenPos, onScreen = cam:WorldToViewportPoint(aimPart.Position)
+                    if onScreen then
+                        local toCenterDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                        if toCenterDist <= LOCK_RADIUS then
+                            local playerPos = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                            if playerPos then
+                                local actualDist = (aimPart.Position - playerPos.Position).Magnitude
+                                if actualDist < closestDist then
+                                    closestDist = actualDist
+                                    closest = model
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return closest
+end
+
+local function toggleAimLock()
+    autoLockEnabled = not autoLockEnabled
+    
+    if autoLockEnabled then
+        lockedTarget = getClosestTargetInCircle()
+        
+        if lockedTarget then
+            print("🔒 Auto Lock Enabled - Target Found")
+            showLockCircle = true
+            lockCircle.Visible = true
+            
+            aimlockBtn.Text = "🔒 LOCKED"
+            aimlockBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        else
+            print("🔍 No target found in lock circle")
+            aimlockBtn.Text = "🔍 NO TARGET"
+            aimlockBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+        end
+        
+        local tween = ts:Create(aimlockBtn, TweenInfo.new(0.3), {BackgroundColor3 = aimlockBtn.BackgroundColor3})
+        tween:Play()
+    else
+        print("🔓 Auto Lock Disabled")
+        lockedTarget = nil
+        showLockCircle = false
+        lockCircle.Visible = false
+        
+        aimlockBtn.Text = "🔓 UNLOCKED"
+        aimlockBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        
+        local tween = ts:Create(aimlockBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(200, 50, 50)})
+        tween:Play()
+    end
+    
+    updateQuickButtons()
+end
+
+-- 👁️ ESP 功能
+local function addESP(model)
+    if model:FindFirstChild("ESP_Highlight") then return end
+    
+    local hl = Instance.new("Highlight")
+    hl.Name = "ESP_Highlight"
+    hl.FillColor = Color3.fromRGB(0, 255, 0)
+    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0
+    hl.Adornee = model
+    hl.Parent = model
+end
+
+local function cleanESP()
+    for _, m in ipairs(workspace:GetChildren()) do
+        if m:IsA("Model") and m:FindFirstChild("ESP_Highlight") then
+            local hum = m:FindFirstChild("Humanoid")
+            local isPlayer = players:FindFirstChild(m.Name)
+            if not hum or isPlayer then
+                m.ESP_Highlight:Destroy()
+            end
+        end
+    end
+end
+
+local function toggleESP()
+    espEnabled = not espEnabled
+    
+    if espEnabled then
+        print("👁️ ESP Enabled")
+        espBtn.Text = "🟢 ESP: ON"
+        
+        task.spawn(function()
+            while espEnabled do
+                for _, model in ipairs(workspace:GetChildren()) do
+                    if model:IsA("Model") and model:FindFirstChild("Humanoid") and model:FindFirstChild("HumanoidRootPart") then
+                        local isPlayer = players:FindFirstChild(model.Name)
+                        if not isPlayer then
+                            addESP(model)
+                        end
+                    end
+                end
+                cleanESP()
+                task.wait(0.5)
+            end
+        end)
+        
+        local tween = ts:Create(espBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(50, 200, 50)})
+        tween:Play()
+    else
+        print("🔴 ESP Disabled")
+        espBtn.Text = "🔴 ESP: OFF"
+        
+        for _, m in ipairs(workspace:GetChildren()) do
+            if m:IsA("Model") and m:FindFirstChild("ESP_Highlight") then
+                m.ESP_Highlight:Destroy()
+            end
+        end
+        
+        local tween = ts:Create(espBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(200, 50, 50)})
+        tween:Play()
+    end
+    
+    updateQuickButtons()
+end
+
+-- 🔫 武器修改功能
+local WeaponList = {
+    "Aidkit", "Akimbo", "Barrier kit", "BombCharge", "Burst Rifle", "DMR", "Defibrillator", "ExplosiveBag",
+    "FAST", "FuelCan", "Grenade Launcher", "Grenade Shell", "Jetpack", "Keycard", "LMG", "Machete",
+    "Mastermind's Rifle", "Motion Hider", "PDC kit", "RPG", "Rifle", "SMG", "Shotgun", "Shovel",
+    "Tablet", "Aerorig", "Armour Peeler", "Bolter", "Combat Toolkit", "Gift of Fire", "Governor kit", "Gunslingers",
+    "Hallsweeper", "Hallucinator kit", "Handaxes", "Harpoon Gun", "Intraplanar Device", "Lifeline", "Loose Trigger",
+    "MADS kit", "Mercy Kill", "Overcharger", "PROXY", "Pacemaker", "Parabolic Hydra", "Rallying Cry", "Recurve",
+    "Resuscitator", "Rocket Stormer", "Runner's Heat", "Shockwave Device", "Sprinter's Streak", "Steelforge",
+    "Stonehedge kit", "Stonewall", "Striker", "Terminal Velocity", "Torqueblade", "Twinface", "Voltaic Impact"
+}
+
+local function modifyWeapon(w)
+    if not table.find(WeaponList, w.Name) then return end
+    
+    if w:GetAttribute("Ammo") then
+        w:SetAttribute("Ammo", 999)
+        if not w:FindFirstChild("_AmmoListener") then
+            w:GetAttributeChangedSignal("Ammo"):Connect(function()
+                if w:GetAttribute("Ammo") < 999 then
+                    w:SetAttribute("Ammo", 999)
+                end
+            end)
+            local tag = Instance.new("BoolValue")
+            tag.Name = "_AmmoListener"
+            tag.Parent = w
+        end
+    end
+    
+    if w:GetAttribute("Firerate") then w:SetAttribute("Firerate", 9999) end
+    if w:GetAttribute("BulletSpeed") then w:SetAttribute("BulletSpeed", 9999) end
+    if w:GetAttribute("Spread") then w:SetAttribute("Spread", 0) end
+end
+
+local function setupCharacter(char)
+    for _, child in ipairs(char:GetChildren()) do
+        modifyWeapon(child)
+    end
+    
+    char.ChildAdded:Connect(function(child)
+        task.wait(0.1)
+        modifyWeapon(child)
+    end)
+end
+
+local function toggleWeaponMods()
+    weaponModEnabled = not weaponModEnabled
+    
+    if weaponModEnabled then
+        print("🔫 Weapon Mods Enabled")
+        weaponBtn.Text = "🟢 WEAPON MODS: ON"
+        
+        if lp.Character then
+            setupCharacter(lp.Character)
+        end
+        
+        task.spawn(function()
+            while weaponModEnabled do
+                if lp.Character then
+                    for _, child in ipairs(lp.Character:GetChildren()) do
+                        modifyWeapon(child)
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
+        
+        local tween = ts:Create(weaponBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(50, 200, 50)})
+        tween:Play()
+    else
+        print("🔴 Weapon Mods Disabled")
+        weaponBtn.Text = "🔴 WEAPON MODS: OFF"
+        
+        local tween = ts:Create(weaponBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(200, 50, 50)})
+        tween:Play()
+    end
+    
+    updateQuickButtons()
+end
+
+-- 🔄 事件绑定
+toggleBtn.MouseButton1Click:Connect(toggleMainUI)
+aimlockBtn.MouseButton1Click:Connect(toggleAimLock)
+espBtn.MouseButton1Click:Connect(toggleESP)
+weaponBtn.MouseButton1Click:Connect(toggleWeaponMods)
+
+quickAimlock.MouseButton1Click:Connect(toggleAimLock)
+quickEsp.MouseButton1Click:Connect(toggleESP)
+quickWeapon.MouseButton1Click:Connect(toggleWeaponMods)
+
+-- 键盘快捷键
+uis.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    
+    if input.KeyCode == Enum.KeyCode.R then
+        toggleAimLock()
+    elseif input.KeyCode == Enum.KeyCode.E then
+        toggleESP()
+    elseif input.KeyCode == Enum.KeyCode.F then
+        toggleWeaponMods()
+    elseif input.KeyCode == Enum.KeyCode.H then
+        toggleMainUI()
+    end
+end)
+
+-- 🎯 AimLock 主循环
+runService.RenderStepped:Connect(function()
+    if lockCircle then
+        lockCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+    end
+    
+    if autoLockEnabled then
+        if not showLockCircle then
+            showLockCircle = true
+            lockCircle.Visible = true
+        end
+        
+        if not lockedTarget or not lockedTarget.Parent then
+            lockedTarget = getClosestTargetInCircle()
+            
+            if lockedTarget then
+                aimlockBtn.Text = "🔒 LOCKED"
+                aimlockBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            else
+                aimlockBtn.Text = "🔍 NO TARGET"
+                aimlockBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+            end
+        end
+        
+        if lockedTarget then
+            local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+            local aimPart = getAimPart(lockedTarget)
+            if aimPart then
+                local screenPos, onScreen = cam:WorldToViewportPoint(aimPart.Position)
+                if onScreen then
+                    local toCenterDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                    if toCenterDist > LOCK_RADIUS then
+                        lockedTarget = getClosestTargetInCircle()
+                    end
+                else
+                    lockedTarget = getClosestTargetInCircle()
+                end
+            end
+        end
+        
+        if lockedTarget then
+            local hum = lockedTarget:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local aimPart = getAimPart(lockedTarget)
+                if aimPart and aimPart:IsA("BasePart") then
+                    local camPos = cam.CFrame.Position
+                    local forwardOffset = aimPart.CFrame.LookVector * HEAD_FORWARD_OFFSET
+                    cam.CFrame = CFrame.new(camPos, aimPart.Position + forwardOffset)
+                    
+                    if lockCircle then
+                        lockCircle.UIStroke.Color = Color3.fromRGB(50, 255, 50)  -- 绿色表示已锁定
+                    end
+                end
+            else
+                lockedTarget = getClosestTargetInCircle()
+            end
+        else
+            if lockCircle then
+                lockCircle.UIStroke.Color = Color3.fromRGB(255, 50, 50)  -- 红色表示搜索中
+            end
+        end
+    else
+        if showLockCircle then
+            showLockCircle = false
+            lockCircle.Visible = false
+        end
+    end
+end)
+
+-- 初始武器修改监听
+lp.CharacterAdded:Connect(function(char)
+    if weaponModEnabled then
+        setupCharacter(char)
+    end
+end)
+
+-- 初始更新快速按钮状态
+updateQuickButtons()
+
+print("🎮 AimLock Pro v2.0 - Compact Circle Loaded!")
+print("📝 New Compact Circle Features:")
+print("  ✅ Single small circle only")
+print("  ✅ Circle radius: " .. LOCK_RADIUS .. " pixels (50% smaller)")
+print("  ✅ Clean minimal design")
+print("  ✅ Color-coded lock status")
+
+warn("⚠️ Use at your own risk! This is for educational purposes only.")
